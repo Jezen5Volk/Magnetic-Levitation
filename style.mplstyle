@@ -1,0 +1,29 @@
+## Changes from defaults: 
+
+axes.linewidth: 1.5 
+axes.spines.top: False
+axes.spines.right: False
+axes.prop_cycle: cycler('color', ['007e57', 'b64000', '565192', 'c40d6a', '488603', 'c28a00', '855701', '484848'])
+axes.labelsize: x-large
+axes.titlesize: x-large
+axes.formatter.use_mathtext: True
+axes.formatter.limits: -3, 4
+
+xtick.direction: in
+xtick.labelsize: large
+xtick.major.size: 4    
+xtick.minor.size: 2.4      
+xtick.major.width: 1
+xtick.minor.width: 0.8
+
+ytick.direction: in
+ytick.labelsize: large
+ytick.major.size: 4    
+ytick.minor.size: 2.4      
+ytick.major.width: 1
+ytick.minor.width: 0.8
+
+figure.dpi: 300
+figure.figsize: 6.4, 4.8
+
+legend.frameon: False
