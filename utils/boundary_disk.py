@@ -90,30 +90,32 @@ class Cylinder:
 
     
     def open_rotor_stator(self, gap, tau, start, stop):
-           '''
-           As a second approach to nonlinear fitting, modify the results of Von Karman (1921) to 
-           model the disk face of the cylinder as it approaches the wall. This function assumes the
-           shaft of the cylinder remains in the laminar regime, estimating the dissipation in watts/m^2
-           
-           
-           gap: a series of measured gap distances in meters [m]
-           tau: a corresponding series of measured exponential ring down times in seconds [s]
-           start: the start point for the theoretical curve for the dissipation in meters [m]
-           stop: the stop point for the theoretical curve for the dissipation in meters [m]
-           '''
-   
-           # TODO: implement a means by which to incorporate experimental data into this plot
-   
-           
-           s_array, C_m = self.disk_moment_coefficient(start, stop)
+        '''
+        As a second approach to nonlinear fitting, modify the results of Von Karman (1921) to 
+        model the disk face of the cylinder as it approaches the wall. This function assumes the
+        shaft of the cylinder remains in the laminar regime, estimating the dissipation in watts/m^2
+        
+        
+        gap: a series of measured gap distances in meters [m]
+        tau: a corresponding series of measured exponential ring down times in seconds [s]
+        start: the start point for the theoretical curve for the dissipation in meters [m]
+        stop: the stop point for the theoretical curve for the dissipation in meters [m]
+        '''
 
-           D_disk_1 = (C_m*0.5*self.rho_f*self.Omega**2*self.b**5)/(np.pi**2 *self.b)
-           
-           D_shaft = 2 * self.mu * self.b * self.Omega**2
-   
-           dissipation = D_disk_1 + D_shaft
-   
-           return s_array, dissipation
+        # TODO: implement a means by which to incorporate experimental data into this plot
+
+        
+        s_array, C_m = self.disk_moment_coefficient(start, stop)
+
+        D_disk_1 = (C_m*0.5*self.rho_f*self.Omega**2*self.b**5)/(np.pi *self.b**2)
+        #D_disk_2 = (C_m*0.5*self.rho_f*self.Omega**2*self.b**5)/(np.pi *self.b**2)
+
+        
+        D_shaft = 2 * self.mu * self.b * self.Omega**2
+
+        dissipation = D_disk_1 + D_shaft
+
+        return s_array, dissipation
    
 
 
@@ -122,7 +124,7 @@ class Cylinder:
     '''
     def disk_moment_coefficient(self, start, stop):
         '''
-        Compute G'(0) for the moment coefficient of a rotating disk
+        Compute the moment coefficient of a rotating disk for a range of gap values
         '''
 
         #sweep distance
@@ -157,8 +159,31 @@ class Cylinder:
 
 
 
+    def disk_moment_fit(self, start, stop):
+        '''
+        Find a fit for the regimes of moment coefficients with the lowest chi squared
+        '''
+
+        s_array, C_m = self.disk_moment_coefficient(start, stop)
+
+    
+        params = np.empty((4, len(s_array)))
+        chisq = np.empty(len(s_array))
+        for i, s in enumerate(s_array):
+            popt, _ = curve_fit(lambda x, a1, b1, a2, b2 : np.piecewise(x, [x < s, x >= s], [lambda y: a1*y**(-b1), lambda y: a2*y**(-b2)]), s_array, C_m, p0 = [1, 1, 1, 1])
+            params[:, i] = popt
+            chisq[i] = np.sum(np.sqrt((np.piecewise(s_array, [s_array < s, s_array >= s], [lambda y: popt[0]*y**(-popt[1]), lambda y: popt[2]*y**(-popt[3])]) - C_m)**2))
+
+        idx = np.argmin(chisq)
+        s_opt = s_array[idx]
+        popt = params[:, idx]
+        best_fit = np.piecewise(s_array, [s_array < s_opt, s_array >= s_opt], [lambda y: popt[0]*y**(-popt[1]), lambda y: popt[2]*y**(-popt[3])])
+
+        return s_array, C_m, best_fit, popt, chisq, idx
+
+
 '''
-ODE Equations, separate from Class
+ODE and curve fit Equations, separate from Class
 '''
 def disk_wall_ode(z, y, p):
     K = p[0]
