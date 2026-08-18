@@ -8,11 +8,11 @@ class Cylinder:
     def __init__(self, 
             b,  # radius in meters
             rho, # cylinder density in kg/m^3
-            Omega = 1000, # angular velocity in rpm 
-            rho_f = 1.226, # density of the fluid in kg/m^3
-            mu = 1.795e-5, # viscosity of the fluid in pascal seconds
-            elle = 0.0105, # total gap distance in meters
-            L = 0.003175 # length of the cylinder in meters
+            Omega, # angular velocity in rpm 
+            rho_f, # density of the fluid in kg/m^3
+            mu, # viscosity of the fluid in pascal seconds
+            elle, # total gap distance in meters
+            L # length of the cylinder in meters
         ):
 
         self.b = b
@@ -22,6 +22,7 @@ class Cylinder:
         self.mu = mu
         self.elle = elle
         self.L = L
+        self.R = (rho_f*self.Omega*b**2)/mu #rotational reynold's number
 
         return
 
@@ -103,19 +104,23 @@ class Cylinder:
         '''
 
         # TODO: implement a means by which to incorporate experimental data into this plot
+        s_array = np.linspace(start, stop, 100)
+        s_crit = (1.647*self.b)*self.R**(-0.391) 
+   
+        #Three components of cylindrical dissipation
+        P_disk_1 = np.where(
+            s_array < s_crit,
+            (np.pi * self.b) / (s_array * self.R),
+            1.66*(s_array/self.b)**0.278/np.sqrt(self.R)
+        )
+        P_disk_2 = 1.66*((self.elle - self.L - s_array)/self.b)**0.278/np.sqrt(self.R)
 
-        
-        s_array, C_m = self.disk_moment_coefficient(start, stop)
-
-        D_disk_1 = (C_m*0.5*self.rho_f*self.Omega**2*self.b**5)/(np.pi *self.b**2)
-        #D_disk_2 = (C_m*0.5*self.rho_f*self.Omega**2*self.b**5)/(np.pi *self.b**2)
-
-        
         D_shaft = 2 * self.mu * self.b * self.Omega**2
 
-        dissipation = D_disk_1 + D_shaft
+        
+        dissipation = P_disk_1/(np.pi*self.b**2) + P_disk_2/(np.pi*self.b**2) + D_shaft
 
-        return s_array, dissipation
+        return s_array, dissipation, s_crit
    
 
 
@@ -132,9 +137,12 @@ class Cylinder:
 
         s_sound = []
         G_prime = []
+        K_guess = 0.3
+
+        
         for s in s_array:
             #setup mesh
-            s_1 = s*np.sqrt(self.Omega/self.mu)
+            s_1 = s * np.sqrt(self.rho_f * self.Omega/self.mu)
             z = np.linspace(0, s_1, 100)
 
             #initial guess
@@ -142,17 +150,15 @@ class Cylinder:
             y_guess[0] = 0.2 * z * np.exp(-z) # F guess
             y_guess[2] = np.exp(-z)            # G guess
             y_guess[4] = -0.5 * z              # H guess
-            p_guess = [s]
 
-            sol = solve_bvp(disk_wall_ode, disk_wall_bc, z, y_guess, p_guess)
+            sol = solve_bvp(disk_wall_ode, disk_wall_bc, z, y_guess, p = [K_guess])
 
             if sol.success:
                 s_sound.append(s)
-                G_prime.append(sol.sol(z)[3][0])
+                G_prime.append(sol.y[3][0])
 
         G_prime = np.asarray(G_prime)
-        R = self.Omega*self.b**2*self.rho_f/self.mu
-        C_m = -np.pi*G_prime*R**0.5
+        C_m = -np.pi*G_prime/np.sqrt(self.R)
 
 
         return np.asarray(s_sound), C_m
@@ -165,19 +171,18 @@ class Cylinder:
         '''
 
         s_array, C_m = self.disk_moment_coefficient(start, stop)
-
     
-        params = np.empty((4, len(s_array)))
+        params = np.empty((2, len(s_array)))
         chisq = np.empty(len(s_array))
         for i, s in enumerate(s_array):
-            popt, _ = curve_fit(lambda x, a1, b1, a2, b2 : np.piecewise(x, [x < s, x >= s], [lambda y: a1*y**(-b1), lambda y: a2*y**(-b2)]), s_array, C_m, p0 = [1, 1, 1, 1])
+            popt, _ = curve_fit(lambda x, a, b : np.piecewise(x, [x < s, x >= s], [lambda y: np.pi*self.b/(y*self.R), lambda y: a*(y/self.b)**b/np.sqrt(self.R)]), s_array, C_m, p0 = [ 1, 1])
             params[:, i] = popt
-            chisq[i] = np.sum(np.sqrt((np.piecewise(s_array, [s_array < s, s_array >= s], [lambda y: popt[0]*y**(-popt[1]), lambda y: popt[2]*y**(-popt[3])]) - C_m)**2))
+            chisq[i] = np.sum(np.sqrt((np.piecewise(s_array, [s_array < s, s_array >= s], [lambda y: np.pi*self.b/(y*self.R), lambda y: popt[0]*(y/self.b)**popt[1]/np.sqrt(self.R)]) - C_m)**2))
 
         idx = np.argmin(chisq)
         s_opt = s_array[idx]
         popt = params[:, idx]
-        best_fit = np.piecewise(s_array, [s_array < s_opt, s_array >= s_opt], [lambda y: popt[0]*y**(-popt[1]), lambda y: popt[2]*y**(-popt[3])])
+        best_fit = np.piecewise(s_array, [s_array < s_opt, s_array >= s_opt], [lambda y: np.pi*self.b/(y*self.R), lambda y: popt[0]*(y/self.b)**popt[1]/np.sqrt(self.R)])
 
         return s_array, C_m, best_fit, popt, chisq, idx
 
