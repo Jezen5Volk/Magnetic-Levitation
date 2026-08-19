@@ -1,5 +1,6 @@
 from scipy.optimize import curve_fit
 from scipy.integrate import solve_bvp
+from scipy.special import lambertw
 import numpy as np
 
 
@@ -22,7 +23,15 @@ class Cylinder:
         self.mu = mu
         self.elle = elle
         self.L = L
-        self.R = (rho_f*self.Omega*b**2)/mu #rotational reynold's number
+        self.R = (self.rho_f*self.Omega*self.b**2)/self.mu #rotational reynold's number
+
+        #Viscous torque for the cylindrical shaft
+        if self.R < 60:
+            self.M_shaft = (4*self.L*self.mu**2/self.rho_f)*self.R
+        else:
+            self.M_shaft = (self.L * self.mu**2)/(3.125*self.rho_f*lambertw(0.397*self.R, k = 0)**2)*self.R**2
+
+
 
         return
 
@@ -73,20 +82,17 @@ class Cylinder:
    
            
            s_array = np.linspace(start, stop, 100)
-           s_crit = (1.62*self.b)/(self.rho_f*self.Omega*self.b**2/self.mu)**(5/11) 
+           G_1 = s_array/self.b
+           G_2 = (self.elle - self.L - s_array)/self.b
+
+           G_crit = 1.62*self.R**(-5/11) 
    
-           #Three components of cylindrical dissipation
-           D_disk_1 = np.where(
-               s_array < s_crit,
-               (self.mu * self.b**2 * self.Omega**2) / (s_array),
-               (1.85 * np.sqrt(self.rho_f * self.mu) * self.b**(19/10)) / np.pi * (s_array)**0.1 * self.Omega**2.5
-           )
-           D_shaft = 2 * self.mu * self.b * self.Omega**2
-           D_disk_2 = (1.85 * np.sqrt(self.rho_f * self.mu) * self.b**(19/10)) / np.pi * (self.elle - self.L - s_array)**0.1 * self.Omega**2.5 
+           M_disk_1 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/self.R)*G_1**-1 + (1.85/np.sqrt(self.R))*G_1**0.1)
+           M_disk_2 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/self.R)*G_2**-1 + (1.85/np.sqrt(self.R))*G_2**0.1)
+           
+           dissipation = M_disk_1/(np.pi*self.b**2) + M_disk_2/(np.pi*self.b**2) + self.M_shaft/(2*np.pi*self.b*self.L)
    
-           dissipation = D_disk_1 + D_disk_2 + D_shaft
-   
-           return s_array, dissipation, s_crit
+           return s_array, dissipation, G_crit
 
 
     
@@ -104,23 +110,20 @@ class Cylinder:
         '''
 
         # TODO: implement a means by which to incorporate experimental data into this plot
-        s_array = np.linspace(start, stop, 100)
-        s_crit = (1.647*self.b)*self.R**(-0.391) 
-   
-        #Three components of cylindrical dissipation
-        P_disk_1 = np.where(
-            s_array < s_crit,
-            (np.pi * self.b) / (s_array * self.R),
-            1.66*(s_array/self.b)**0.278/np.sqrt(self.R)
-        )
-        P_disk_2 = 1.66*((self.elle - self.L - s_array)/self.b)**0.278/np.sqrt(self.R)
-
-        D_shaft = 2 * self.mu * self.b * self.Omega**2
-
         
-        dissipation = P_disk_1/(np.pi*self.b**2) + P_disk_2/(np.pi*self.b**2) + D_shaft
 
-        return s_array, dissipation, s_crit
+        s_array = np.linspace(start, stop, 100)
+        G_1 = s_array/self.b
+        G_2 = (self.elle - self.L - s_array)/self.b
+
+        G_crit = 1
+
+        M_disk_1 = 1
+        M_disk_2 = 1
+        
+        dissipation = M_disk_1/(np.pi*self.b**2) + M_disk_2/(np.pi*self.b**2) + self.M_shaft/(2*np.pi*self.b*self.L)
+
+        return s_array, dissipation, G_crit
    
 
 
