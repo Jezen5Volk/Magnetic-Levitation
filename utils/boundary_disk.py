@@ -90,7 +90,7 @@ class Cylinder:
            M_disk_1 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/self.R)*G_1**-1 + (1.85/np.sqrt(self.R))*G_1**0.1)
            M_disk_2 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/self.R)*G_2**-1 + (1.85/np.sqrt(self.R))*G_2**0.1)
            
-           dissipation = M_disk_1/(np.pi*self.b**2) + M_disk_2/(np.pi*self.b**2) + self.M_shaft/(2*np.pi*self.b*self.L)
+           dissipation = M_disk_1*self.Omega/(np.pi*self.b**2) + M_disk_2*self.Omega/(np.pi*self.b**2) + self.M_shaft*self.Omega/(2*np.pi*self.b*self.L)
    
            return s_array, dissipation, G_crit
 
@@ -116,12 +116,17 @@ class Cylinder:
         G_1 = s_array/self.b
         G_2 = (self.elle - self.L - s_array)/self.b
 
-        G_crit = 1
+        #Best fit parameters from ODE solution
+        c_0 = 1.659
+        c_1 = 0.368
+        n = 3.790
 
-        M_disk_1 = 1
-        M_disk_2 = 1
+        G_crit = 1.595*self.R**-0.366
+
+        M_disk_1 = ((np.pi/(G_1*self.R))**n + (c_0*G_1**c_1/np.sqrt(self.R))**n)**(1/n)
+        M_disk_2 = ((np.pi/(G_2*self.R))**n + (c_0*G_2**c_1/np.sqrt(self.R))**n)**(1/n)
         
-        dissipation = M_disk_1/(np.pi*self.b**2) + M_disk_2/(np.pi*self.b**2) + self.M_shaft/(2*np.pi*self.b*self.L)
+        dissipation = M_disk_1*self.Omega/(np.pi*self.b**2) + M_disk_2*self.Omega/(np.pi*self.b**2) + self.M_shaft*self.Omega/(2*np.pi*self.b*self.L)
 
         return s_array, dissipation, G_crit
    
@@ -174,20 +179,12 @@ class Cylinder:
         '''
 
         s_array, C_m = self.disk_moment_coefficient(start, stop)
-    
-        params = np.empty((2, len(s_array)))
-        chisq = np.empty(len(s_array))
-        for i, s in enumerate(s_array):
-            popt, _ = curve_fit(lambda x, a, b : np.piecewise(x, [x < s, x >= s], [lambda y: np.pi*self.b/(y*self.R), lambda y: a*(y/self.b)**b/np.sqrt(self.R)]), s_array, C_m, p0 = [ 1, 1])
-            params[:, i] = popt
-            chisq[i] = np.sum(np.sqrt((np.piecewise(s_array, [s_array < s, s_array >= s], [lambda y: np.pi*self.b/(y*self.R), lambda y: popt[0]*(y/self.b)**popt[1]/np.sqrt(self.R)]) - C_m)**2))
 
-        idx = np.argmin(chisq)
-        s_opt = s_array[idx]
-        popt = params[:, idx]
-        best_fit = np.piecewise(s_array, [s_array < s_opt, s_array >= s_opt], [lambda y: np.pi*self.b/(y*self.R), lambda y: popt[0]*(y/self.b)**popt[1]/np.sqrt(self.R)])
+        popt, _ = curve_fit(lambda x, c_0, c_1, n: ((np.pi*self.b/(x*self.R))**n + (c_0*(x/self.b)**c_1/np.sqrt(self.R))**n)**(1/n), s_array, C_m, p0 = [1, 1, 1])
 
-        return s_array, C_m, best_fit, popt, chisq, idx
+        best_fit = ((np.pi*self.b/(s_array*self.R))**popt[2] + (popt[0]*(s_array/self.b)**popt[1]/np.sqrt(self.R))**popt[2])**(1/popt[2])
+
+        return s_array, C_m, best_fit, popt
 
 
 '''
