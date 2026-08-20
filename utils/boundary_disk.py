@@ -24,6 +24,8 @@ class Cylinder:
         self.elle = elle
         self.L = L
         self.R = (self.rho_f*self.Omega*self.b**2)/self.mu #rotational reynold's number
+        self.M = self.rho*(np.pi*self.b**2*self.L) #mass of cylinder
+        self.I = 0.5 *self.M*self.b**2 #rotational moment of inertia
 
         #Viscous torque for the cylindrical shaft
         if self.R < 60:
@@ -38,57 +40,28 @@ class Cylinder:
     
 
     '''
-    Curve Fitting + Experimental Results
+    Theoretical dissipation curves
     '''
-    def linear_damping(self, gap, tau, start, stop):
-        '''
-        Under an assumption of uniform linear damping, fit the ring down times as a function of gap 
-        distance using a logarithmic approach. Use the result to estimate the dissipation in 
-        watts/m^2
 
-        gap: a series of measured gap distances in meters [m]
-        tau: a corresponding series of measured exponential ring down times in seconds [s]
-        start: the start point for the theoretical curve for the dissipation in meters [m]
-        stop: the stop point for the theoretical curve for the dissipation in meters [m]
-        '''
-
-        #curve fit tau
-        s_array = np.linspace(start, stop, 100)
-        popt, _ = curve_fit(lambda x, a, b: a*np.log(x) + b, gap, tau, p0 = (1, 1))
-        tau_fit = popt[0]*np.log(s_array) + popt[1]
-
-        #dissipation
-        dissipation = (np.pi**2 *self.rho* self.b**3)/(3600*tau)*self.Omega**2
-        dissipation_fit = (np.pi**2 *self.rho* self.b**3)/(3600*tau_fit)*self.Omega**2
-
-        return s_array, dissipation, dissipation_fit
-
-
-
-    def enclosed_rotor_stator(self, gap, tau, start, stop):
+    def enclosed_rotor_stator(self, start, stop):
            '''
            As a first approach to nonlinear fitting, use the results of Daily and Nece (1960) to 
            model the disk face of the cylinder as it approaches the wall. This function assumes the
            shaft of the cylinder remains in the laminar regime, estimating the dissipation in watts/m^2
            
-           
-           gap: a series of measured gap distances in meters [m]
-           tau: a corresponding series of measured exponential ring down times in seconds [s]
            start: the start point for the theoretical curve for the dissipation in meters [m]
            stop: the stop point for the theoretical curve for the dissipation in meters [m]
-           '''
-   
-           # TODO: implement a means by which to incorporate experimental data into this plot
-   
+           '''   
            
            s_array = np.linspace(start, stop, 100)
            G_1 = s_array/self.b
            G_2 = (self.elle - self.L - s_array)/self.b
 
            G_crit = 1.62*self.R**(-5/11) 
-   
-           M_disk_1 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/self.R)*G_1**-1 + (1.85/np.sqrt(self.R))*G_1**0.1)
-           M_disk_2 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/self.R)*G_2**-1 + (1.85/np.sqrt(self.R))*G_2**0.1)
+
+           n = 3.5
+           M_disk_1 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*(((np.pi/self.R)*G_1**-1)**n + ((1.85/np.sqrt(self.R))*G_1**0.1)**n)**(1/n)
+           M_disk_2 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*(((np.pi/self.R)*G_2**-1)**n + ((1.85/np.sqrt(self.R))*G_2**0.1)**n)**(1/n)
            
            dissipation = M_disk_1*self.Omega/(np.pi*self.b**2) + M_disk_2*self.Omega/(np.pi*self.b**2) + self.M_shaft*self.Omega/(2*np.pi*self.b*self.L)
    
@@ -96,21 +69,15 @@ class Cylinder:
 
 
     
-    def open_rotor_stator(self, gap, tau, start, stop):
+    def open_rotor_stator(self, start, stop):
         '''
         As a second approach to nonlinear fitting, modify the results of Von Karman (1921) to 
         model the disk face of the cylinder as it approaches the wall. This function assumes the
         shaft of the cylinder remains in the laminar regime, estimating the dissipation in watts/m^2
         
-        
-        gap: a series of measured gap distances in meters [m]
-        tau: a corresponding series of measured exponential ring down times in seconds [s]
         start: the start point for the theoretical curve for the dissipation in meters [m]
         stop: the stop point for the theoretical curve for the dissipation in meters [m]
-        '''
-
-        # TODO: implement a means by which to incorporate experimental data into this plot
-        
+        '''        
 
         s_array = np.linspace(start, stop, 100)
         G_1 = s_array/self.b
@@ -123,8 +90,8 @@ class Cylinder:
 
         G_crit = 1.595*self.R**-0.366
 
-        M_disk_1 = ((np.pi/(G_1*self.R))**n + (c_0*G_1**c_1/np.sqrt(self.R))**n)**(1/n)
-        M_disk_2 = ((np.pi/(G_2*self.R))**n + (c_0*G_2**c_1/np.sqrt(self.R))**n)**(1/n)
+        M_disk_1 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/(G_1*self.R))**n + (c_0*G_1**c_1/np.sqrt(self.R))**n)**(1/n)
+        M_disk_2 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/(G_2*self.R))**n + (c_0*G_2**c_1/np.sqrt(self.R))**n)**(1/n)
         
         dissipation = M_disk_1*self.Omega/(np.pi*self.b**2) + M_disk_2*self.Omega/(np.pi*self.b**2) + self.M_shaft*self.Omega/(2*np.pi*self.b*self.L)
 
