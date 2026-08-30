@@ -84,15 +84,16 @@ class Cylinder:
         G_2 = (self.elle - self.L - s_array)/self.b
 
         #Best fit parameters from ODE solution
-        c_0 = 1.659
-        c_1 = 0.368
-        n = 3.790
+        c_0 = 0.000000002234
+        c_1 = 0.000000001316
+        c_2 = 0.235
+        n = 4.570
 
-        G_crit = 1.595*self.R**-0.366
+        G_crit = 1.609*self.R**-0.49
 
-        M_disk_1 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/(G_1*self.R))**n + (c_0*G_1**c_1/np.sqrt(self.R))**n)**(1/n)
-        M_disk_2 = (self.b*self.mu**2)/(2*self.rho_f)*self.R**2*((np.pi/(G_2*self.R))**n + (c_0*G_2**c_1/np.sqrt(self.R))**n)**(1/n)
-        
+        M_disk_1 = ((c_0/(G_1**2*self.R))**n + (c_1*G_1**c_2/np.sqrt(self.R))**n)**(1/n)
+        M_disk_2 = ((c_0/(G_2**2*self.R))**n + (c_1*G_2**c_2/np.sqrt(self.R))**n)**(1/n)
+
         dissipation = M_disk_1*self.Omega/(np.pi*self.b**2) + M_disk_2*self.Omega/(np.pi*self.b**2) + self.M_shaft*self.Omega/(2*np.pi*self.b*self.L)
 
         return s_array, dissipation, G_crit
@@ -102,7 +103,7 @@ class Cylinder:
     '''
     Moment Coefficient Numerical ODE Fitting
     '''
-    def disk_moment_coefficient(self, start, stop):
+    def disk_moment_coeff(self, start, stop):
         '''
         Compute the moment coefficient of a rotating disk for a range of gap values
         '''
@@ -112,79 +113,94 @@ class Cylinder:
 
         s_sound = []
         G_prime = []
-        K_guess = 0.3
-
         
         for s in s_array:
             #setup mesh
-            s_1 = s * np.sqrt(self.rho_f * self.Omega/self.mu)
-            z = np.linspace(0, s_1, 100)
+            eta = np.linspace(0, 1, 100)
+            R_s = self.rho_f*self.Omega*s**2/self.mu
 
             #initial guess
-            y_guess = np.zeros((5, z.size))
-            y_guess[0] = 0.2 * z * np.exp(-z) # F guess
-            y_guess[2] = np.exp(-z)            # G guess
-            y_guess[4] = -0.5 * z              # H guess
+            y_guess = np.zeros((6, eta.size))
 
-            sol = solve_bvp(disk_wall_ode, disk_wall_bc, z, y_guess, p = [K_guess])
+            #ode
+            sol = solve_bvp(lambda z, y: disk_wall_ode(z, y, R_s), disk_wall_bc, eta, y_guess)
 
             if sol.success:
                 s_sound.append(s)
-                G_prime.append(sol.y[3][0])
+                G_prime.append(sol.y[5][0])
 
         G_prime = np.asarray(G_prime)
-        C_m = -np.pi*G_prime/np.sqrt(self.R)
+        s_sound = np.asarray(s_sound)
+        C_m = -np.pi*self.b/(s_sound*self.R)*G_prime
 
 
-        return np.asarray(s_sound), C_m
+        return s_sound, C_m
 
 
 
     def disk_moment_fit(self, start, stop):
         '''
-        Find a fit for the regimes of moment coefficients with the lowest chi squared
+        Find a fit for the regimes of moment coefficients 
         '''
 
-        s_array, C_m = self.disk_moment_coefficient(start, stop)
+        s_array, C_m = self.disk_moment_coeff(start, stop)
 
-        popt, _ = curve_fit(lambda x, c_0, c_1, n: ((np.pi*self.b/(x*self.R))**n + (c_0*(x/self.b)**c_1/np.sqrt(self.R))**n)**(1/n), s_array, C_m, p0 = [1, 1, 1])
+        popt, _ = curve_fit(lambda x, c0, c1, c2, c3: self.moment_function(x, [c0, c1, c2, c3]), s_array, C_m, p0 = [1, 1, 1, 1])
+        best_fit = self.moment_function(s_array, popt)
 
-        best_fit = ((np.pi*self.b/(s_array*self.R))**popt[2] + (popt[0]*(s_array/self.b)**popt[1]/np.sqrt(self.R))**popt[2])**(1/popt[2])
-
+    
         return s_array, C_m, best_fit, popt
+
+    def moment_function(self, x, params):
+        '''
+        Fitting function used in tandem with disk_moment_fit
+        '''
+        c0, c1, c2, c3 = params
+
+        G = x/self.b
+        eta = G*np.sqrt(self.R)
+
+        C_couette = np.pi/(G*self.R)*np.exp(-eta*c0)
+        C_free = 1.935/np.sqrt(self.R)*(1 - c1*eta**c2*np.exp(-eta*c3))
+    
+        return C_couette + C_free
+
 
 
 '''
 ODE and curve fit Equations, separate from Class
 '''
-def disk_wall_ode(z, y, p):
-    K = p[0]
-    F, F_prime, G, G_prime, H = y
+def disk_wall_ode(z, y, R_s):
+    H, H_prime, H_2prime, H_3prime, G, G_prime = y
     
-    
-    dF = F_prime
-    dF_prime = F**2 - G**2 + F_prime * H + K**2
+    dH = H_prime
+    d2H = H_2prime
+    d3H = H_3prime
+    d4H = R_s*(H*H_3prime + 4*G*G_prime)
+
     dG = G_prime
-    dG_prime = 2 * F * G + G_prime * H
-    dH = -2 * F
+    d2G = R_s*(H*G_prime - H_prime*G)
     
-    return np.vstack((dF, dF_prime, dG, dG_prime, dH))
+    return np.vstack((dH, d2H, d3H, d4H, dG, d2G))
 
 
-def disk_wall_bc(ya, yb, p):
+def disk_wall_bc(ya, yb):
     '''
-    ya corresponds to z_1 = 0
-    yb corresponds to z_1 = s sqrt(omega/nu)
-    p is for unfixed constants, but is unused in the boundary conditions
+    ya corresponds to nu = 0
+    yb corresponds to nu = 1
 
     the scipy BVP function is setup to return residuals
     '''
 
     return np.array([
-        ya[0] - 0.0,  # F(0) = 0
-        ya[2] - 1.0,  # G(0) = 1
-        ya[4] - 0.0,  # H(0) = 0
-        yb[0] - 0.0,  # F(z(s)) = 0
-        yb[2] - 0.0,  # G(z(s)) = 0
-        yb[4] - 0.0   # H((s))
+        ya[0] - 0.0,  # H(0) = 0   u_z, disk face
+        ya[1] - 0.0,  # H'(0) = 0  u_r, disk face
+        ya[4] - 1.0,  # G(0) = 1   u_ϕ, disk face
+        yb[0] - 0.0,  # H(1) = 0   u_z, wall
+        yb[2] - 0.0,  # H'(1) = 0  u_r, wall
+        yb[4] - 0.0,  # G(1) = 0   u_ϕ, wall
     ])
+
+
+
+
