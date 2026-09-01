@@ -80,23 +80,21 @@ class Cylinder:
         '''        
 
         s_array = np.linspace(start, stop, 100)
-        G_1 = s_array/self.b
-        G_2 = (self.elle - self.L - s_array)/self.b
+        x1 = s_array
+        x2 = (self.elle - self.L - s_array)
 
         #Best fit parameters from ODE solution
-        c_0 = 0.000000002234
-        c_1 = 0.000000001316
-        c_2 = 0.235
-        n = 4.570
+        c0 = 0.654
+        c1 = 0.528
+        c2 = 1.895
+        c3 = 0.918
 
-        G_crit = 1.609*self.R**-0.49
-
-        M_disk_1 = ((c_0/(G_1**2*self.R))**n + (c_1*G_1**c_2/np.sqrt(self.R))**n)**(1/n)
-        M_disk_2 = ((c_0/(G_2**2*self.R))**n + (c_1*G_2**c_2/np.sqrt(self.R))**n)**(1/n)
+        M_disk_1 = self.moment_function(x1, [c0, c1, c2, c3])*(self.b*self.mu**2)/(2*self.rho_f)*self.R**2
+        M_disk_2 = self.moment_function(x2, [c0, c1, c2, c3])*(self.b*self.mu**2)/(2*self.rho_f)*self.R**2
 
         dissipation = M_disk_1*self.Omega/(np.pi*self.b**2) + M_disk_2*self.Omega/(np.pi*self.b**2) + self.M_shaft*self.Omega/(2*np.pi*self.b*self.L)
 
-        return s_array, dissipation, G_crit
+        return s_array, dissipation
    
 
 
@@ -151,6 +149,8 @@ class Cylinder:
     
         return s_array, C_m, best_fit, popt
 
+
+
     def moment_function(self, x, params):
         '''
         Fitting function used in tandem with disk_moment_fit
@@ -158,10 +158,10 @@ class Cylinder:
         c0, c1, c2, c3 = params
 
         G = x/self.b
-        eta = G*np.sqrt(self.R)
+        zeta = G*np.sqrt(self.R)
 
-        C_couette = np.pi/(G*self.R)*np.exp(-eta*c0)
-        C_free = 1.935/np.sqrt(self.R)*(1 - c1*eta**c2*np.exp(-eta*c3))
+        C_couette = np.pi/(G*self.R)*np.exp(-zeta*c0)
+        C_free = 1.935/np.sqrt(self.R)*(1 - c1*zeta**c2*np.exp(-zeta*c3))
     
         return C_couette + C_free
 
