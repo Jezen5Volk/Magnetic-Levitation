@@ -2,6 +2,99 @@ from scipy.optimize import curve_fit
 from scipy.integrate import solve_bvp
 from scipy.special import lambertw
 import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+class Disk: 
+    def __init__(self, b):
+
+        self.b = b #radius in meters
+
+        return
+
+    def gen_pressure_contours(self, s_start, s_stop, omega_start, omega_stop, pressure_range, mu, size = 500): 
+        '''
+        Generate colormap and reynold's number for contour plotting
+
+        s: gap distance range(s) in meters
+        omega: angular velocity range(s) in rpm
+        rho_f: fluid density in kg/m&3
+        mu: viscosity of the fluid in pascal seconds
+        '''
+
+        R_gap_ranges = []
+        for p in pressure_range: 
+            p = p*1.01325e5/760
+            rho = 4.81e-26*p/(1.38e-23*300)
+            ss, ww, R_gap, _ = self.gen_cmapR(s_start, s_stop, omega_start, omega_stop, rho, mu)
+            R_gap_ranges.append(R_gap)
+
+        return ss, ww, R_gap_ranges
+
+
+    def gen_enclosed_contours(self, s_start, s_stop, omega_start, omega_stop, pressure_range, mu, size = 500): 
+        '''
+        Generate colormap and reynold's number for contour plotting
+
+        s: gap distance range(s) in meters
+        omega: angular velocity range(s) in rpm
+        rho_f: fluid density in kg/m&3
+        mu: viscosity of the fluid in pascal seconds
+        '''
+
+        #meshgrid
+        s = np.linspace(s_start, s_stop, size)
+        Omega = np.linspace(omega_start, omega_stop, size) *2*np.pi/60
+        ss, ww = np.meshgrid(s, Omega)
+
+        R_gap_ranges = []
+        for p in pressure_range: 
+            p = p*1.01325e5/760
+            rho = 4.81e-26*p/(1.38e-23*300)
+
+            R_phi = rho*ww*self.b**2/mu
+            dimensionless_quantity = ss/self.b*(R_phi)**(5/11)
+            
+            R_gap_ranges.append(dimensionless_quantity)
+
+        return ss, ww, R_gap_ranges
+
+
+    def gen_cmapR(self, s_start, s_stop, omega_start, omega_stop, rho_f, mu, size = 500):
+        '''
+        Generate colormap and reynold's number for contour plotting
+
+        s: gap distance range(s) in meters
+        omega: angular velocity range(s) in rpm
+        rho_f: fluid density in kg/m&3
+        mu: viscosity of the fluid in pascal seconds
+        '''
+
+        #meshgrid
+        s = np.linspace(s_start, s_stop, size)
+        Omega = np.linspace(omega_start, omega_stop, size) *2*np.pi/60
+        ss, ww = np.meshgrid(s, Omega)
+
+        #dimensionless parameters
+        R_gap = (rho_f *ww*ss**2)/mu
+        R_rot = (rho_f *ww*self.b**2)/mu
+        G = ss/self.b
+        zeta = G*np.sqrt(R_rot)
+
+        #Best fit parameters from ODE solution
+        c0 = 0.654
+        c1 = 0.528
+        c2 = 1.895
+        c3 = 0.918
+
+        #moment coefficient
+        C_couette = np.pi/(G*R_rot)*np.exp(-zeta*c0)
+        C_free = 1.935/np.sqrt(R_rot)*(1 - c1*zeta**c2*np.exp(-zeta*c3))
+        M_phi = mu**2 * self.b * R_rot**2/(2*rho_f)*(C_couette + C_free)
+
+        return ss, ww, R_gap, M_phi
+
 
 
 
@@ -32,8 +125,6 @@ class Cylinder:
             self.M_shaft = (4*self.L*self.mu**2/self.rho_f)*self.R
         else:
             self.M_shaft = (self.L * self.mu**2)/(3.125*self.rho_f*lambertw(0.397*self.R, k = 0)**2)*self.R**2
-
-
 
         return
 
