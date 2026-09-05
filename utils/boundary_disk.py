@@ -1,5 +1,6 @@
 from scipy.optimize import curve_fit
 from scipy.integrate import solve_bvp
+import scipy.integrate as integrate
 from scipy.special import lambertw
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,13 +8,50 @@ import matplotlib.pyplot as plt
 
 
 class Disk: 
-    def __init__(self, b):
+    def __init__(self, b, rho, mu):
 
         self.b = b #radius in meters
+        self.rho = rho #density in kg/m^3
+        self.mu = mu #viscosity in pascal seconds
 
         return
 
-    def gen_pressure_contours(self, s_start, s_stop, omega_start, omega_stop, pressure_range, mu, size = 500): 
+
+    def ors_angular_velocity(self, s, omega_start, omega_stop, pressure, params = [0.654, 0.528, 1.895, 0.918], size = 500):
+        '''
+        Numerically integrate the torque expression to solve for time dependence
+        '''
+        G = s/self.b
+        c0, c1, c2, c3 = params
+
+        M_phi_invs = lambda R: -1/(R**2*(np.pi/(G*R)*np.exp(-c0*G*R**0.5) + 1.935*R**0.5*(1 - c1*(G*R**0.5)**c2*np.exp(-c3*G*R**0.5))))
+        omega = np.linspace(omega_start, omega_stop, size)*2*np.pi/60
+
+        t = []
+        for i, w in enumerate(omega):
+            if i == 0: 
+                p = pressure*1.01325e5/760
+                self.rho_f = 4.81e-26*p/(1.38e-23*300)
+                R_naught = self.rho_f * w * self.b**2/self.mu
+                t.append(0)
+            else: 
+                R_t = self.rho_f*w*self.b**2/self.mu
+                result = integrate.quad(M_phi_invs, R_naught, R_t)
+                t.append(result[0])
+
+        t = np.pi*self.b*self.rho/self.mu*np.asarray(t)
+        omega = 60/(2*np.pi)*omega
+
+        #best exponential fit
+        popt, _ = curve_fit(lambda t, tau, omega_0: omega_0*np.exp(-t/tau), xdata = t, ydata = omega, p0 = [1, omega_start])
+        tau = popt[0]
+        omega_0 = popt[1]
+        exp_fit = omega_0*np.exp(-t/tau)
+
+        return t, omega, exp_fit, tau
+
+
+    def gen_pressure_contours(self, s_start, s_stop, omega_start, omega_stop, pressure_range, size = 500): 
         '''
         Generate colormap and reynold's number for contour plotting
 
@@ -27,13 +65,13 @@ class Disk:
         for p in pressure_range: 
             p = p*1.01325e5/760
             rho = 4.81e-26*p/(1.38e-23*300)
-            ss, ww, R_gap, _ = self.gen_cmapR(s_start, s_stop, omega_start, omega_stop, rho, mu)
+            ss, ww, R_gap, _ = self.gen_cmapR(s_start, s_stop, omega_start, omega_stop, rho, size = size)
             R_gap_ranges.append(R_gap)
 
         return ss, ww, R_gap_ranges
 
 
-    def gen_enclosed_contours(self, s_start, s_stop, omega_start, omega_stop, pressure_range, mu, size = 500): 
+    def gen_enclosed_contours(self, s_start, s_stop, omega_start, omega_stop, pressure_range, size = 500): 
         '''
         Generate colormap and reynold's number for contour plotting
 
@@ -53,7 +91,7 @@ class Disk:
             p = p*1.01325e5/760
             rho = 4.81e-26*p/(1.38e-23*300)
 
-            R_phi = rho*ww*self.b**2/mu
+            R_phi = rho*ww*self.b**2/self.mu
             dimensionless_quantity = ss/self.b*(R_phi)**(5/11)
             
             R_gap_ranges.append(dimensionless_quantity)
@@ -61,7 +99,7 @@ class Disk:
         return ss, ww, R_gap_ranges
 
 
-    def gen_cmapR(self, s_start, s_stop, omega_start, omega_stop, rho_f, mu, size = 500):
+    def gen_cmapR(self, s_start, s_stop, omega_start, omega_stop, rho_f, size = 500):
         '''
         Generate colormap and reynold's number for contour plotting
 
@@ -77,8 +115,8 @@ class Disk:
         ss, ww = np.meshgrid(s, Omega)
 
         #dimensionless parameters
-        R_gap = (rho_f *ww*ss**2)/mu
-        R_rot = (rho_f *ww*self.b**2)/mu
+        R_gap = (rho_f *ww*ss**2)/self.mu
+        R_rot = (rho_f *ww*self.b**2)/self.mu
         G = ss/self.b
         zeta = G*np.sqrt(R_rot)
 
@@ -91,7 +129,7 @@ class Disk:
         #moment coefficient
         C_couette = np.pi/(G*R_rot)*np.exp(-zeta*c0)
         C_free = 1.935/np.sqrt(R_rot)*(1 - c1*zeta**c2*np.exp(-zeta*c3))
-        M_phi = mu**2 * self.b * R_rot**2/(2*rho_f)*(C_couette + C_free)
+        M_phi = self.mu**2 * self.b * R_rot**2/(2*rho_f)*(C_couette + C_free)
 
         return ss, ww, R_gap, M_phi
 
