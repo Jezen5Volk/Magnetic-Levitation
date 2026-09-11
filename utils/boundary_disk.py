@@ -3,28 +3,30 @@ from scipy.integrate import solve_bvp
 import scipy.integrate as integrate
 from scipy.special import lambertw
 import numpy as np
-import matplotlib.pyplot as plt
 
 
 
 class Disk: 
-    def __init__(self, b, rho, mu):
+    def __init__(self, b, rho, mu, elle):
 
         self.b = b #radius in meters
         self.rho = rho #density in kg/m^3
         self.mu = mu #viscosity in pascal seconds
+        self.elle = elle #total gap distance in meters
 
         return
+
 
 
     def ors_angular_velocity(self, s, omega_start, omega_stop, pressure, params = [0.654, 0.528, 1.895, 0.918], size = 500):
         '''
         Numerically integrate the torque expression to solve for time dependence
         '''
-        G = s/self.b
+        G_1 = s/self.b
+        G_2 = (self.elle - s)/self.b
         c0, c1, c2, c3 = params
 
-        M_phi_invs = lambda R: -1/(R**2*(np.pi/(G*R)*np.exp(-c0*G*R**0.5) + 1.935*R**0.5*(1 - c1*(G*R**0.5)**c2*np.exp(-c3*G*R**0.5))))
+        M_phi_invs = lambda R: -1/(R**2*(np.pi/(G_1*R)*np.exp(-c0*G_1*R**0.5) + 1.935*R**0.5*(1 - c1*(G_1*R**0.5)**c2*np.exp(-c3*G_1*R**0.5)) + np.pi/(G_2*R)*np.exp(-c0*G_2*R**0.5) + 1.935*R**0.5*(1 - c1*(G_2*R**0.5)**c2*np.exp(-c3*G_2*R**0.5))))
         omega = np.linspace(omega_start, omega_stop, size)*2*np.pi/60
 
         t = []
@@ -43,10 +45,9 @@ class Disk:
         omega = 60/(2*np.pi)*omega
 
         #best exponential fit
-        popt, _ = curve_fit(lambda t, tau, omega_0: omega_0*np.exp(-t/tau), xdata = t, ydata = omega, p0 = [1, omega_start])
+        popt, _ = curve_fit(lambda t, tau: omega_start*np.exp(-t/tau), xdata = t, ydata = omega, p0 = [10])
         tau = popt[0]
-        omega_0 = popt[1]
-        exp_fit = omega_0*np.exp(-t/tau)
+        exp_fit = omega_start*np.exp(-t/tau)
 
         return t, omega, exp_fit, tau
 
