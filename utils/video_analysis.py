@@ -56,7 +56,7 @@ class Videos:
                 var = np.var(frames_1sec, axis = -1)
                 var_norm = cv2.normalize(var, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
                 _, thresh = cv2.threshold(var_norm, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh)
+                _, labels, _, _ = cv2.connectedComponentsWithStats(thresh)
 
                 #Find centroid with max variance peak
                 y_peak, x_peak = np.unravel_index(np.argmax(var), var.shape)
@@ -71,7 +71,7 @@ class Videos:
                     marker_outline = max(contours, key=cv2.contourArea)
 
                 #compute ffts
-                zero_pad_multiplier = 4
+                zero_pad_multiplier = 8
                 hanning = np.hanning(fps)
                 windowed_fft = (frames_1sec[centroid_y, centroid_x, :] - np.mean(frames_1sec[centroid_y, centroid_x, :]))*hanning
                 fft = np.mean(np.fft.rfft(windowed_fft, axis = -1, n = fps*zero_pad_multiplier), axis = 0)
@@ -81,11 +81,18 @@ class Videos:
                 #nicely plotable one-sided cestrum
                 half_length = len(cepstrum)//2
                 half_ceps = cepstrum[:half_length]
-                quefrency = np.linspace(0, 1/2, half_length) #1/2 is because the fft is over one second
+                quefrency = np.linspace(0, zero_pad_multiplier/2, half_length) #1/2 is because the fft is for one second but we're only taking half the spectrum bc of symmetry
 
-                #compute rpm
-                T = quefrency[np.argmax(half_ceps)]
-                rpm.append(60/T)
+                #compute rpm by fitting a 3 point parabola
+                max_idx = np.argmax(half_ceps)
+                y1 = half_ceps[max_idx - 1]
+                y2 = half_ceps[max_idx]
+                y3 = half_ceps[max_idx + 1]
+                dt = quefrency[max_idx + 1] - quefrency[max_idx]
+                b = (y3-y1)/(2*dt)
+                a = (y1 - 2*y2 + y3)/(2*dt**2)
+                f_invs = quefrency[max_idx] -b/(2*a)
+                rpm.append(60/f_invs)
 
             else:
                 counter += 1
