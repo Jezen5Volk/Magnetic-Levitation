@@ -1,8 +1,7 @@
 import numpy as np
 import cv2
 import os
-from scipy.signal import find_peaks
-
+import time 
 
 
 class Videos:
@@ -31,15 +30,11 @@ class Videos:
         with a mark applied to track rotational movement
         '''
 
-
         capture = cv2.VideoCapture(video_path)
 
-        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-        rpm = []
+        centroid_x, centroid_y = None, None
         frames_in_mem = []
-        ROI_flag = False
+        rpm = []
         while True: 
             #load frames
             ret, frame = capture.read()
@@ -49,13 +44,13 @@ class Videos:
                 frames_in_mem.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)) 
 
             #compute ROI
-            if not ROI_flag and len(frames_in_mem) == fps:
+            if centroid_x is None and len(frames_in_mem) == fps:
                 centroid_x, centroid_y, var, marker_outline = self.compute_ROI(frames_in_mem)
-                ROI_flag = True
 
             #compute FFT
             if len(frames_in_mem) == fps: 
-                omega, half_ceps, quefrency = self.compute_spectrum(centroid_x, centroid_y, fps, frames_in_mem)
+                frames_in_mem = np.asarray(frames_in_mem, dtype = np.uint8)
+                omega, fft_mag, frequency = self.compute_spectrum(centroid_x, centroid_y, fps, frames_in_mem)
                 rpm.append(omega)
                 frames_in_mem = []
 
@@ -67,9 +62,7 @@ class Videos:
         capture.release() 
         cv2.destroyAllWindows()
 
-
-        return rpm, half_ceps, quefrency, var, marker_outline
-
+        return rpm, fft_mag, frequency, var, marker_outline
 
 
 
@@ -77,8 +70,6 @@ class Videos:
         '''
         compute the region of interest from analyzing variance
         '''
-        #convert to np.array
-        frames = np.array(frames, dtype=np.uint8)
 
         #compute threshold
         var = np.var(frames, axis = 0)
@@ -98,7 +89,6 @@ class Videos:
         if contours:
             marker_outline = max(contours, key=cv2.contourArea)
 
-
         return centroid_x, centroid_y, var, marker_outline
         
 
@@ -107,8 +97,6 @@ class Videos:
         '''
         compute the spectrum from a group of frames
         '''
-        #convert to np.array
-        frames = np.array(frames, dtype=np.uint8)
 
         #obtain ROI
         ROI = frames[:, centroid_y, centroid_x].T # shape: (N_ROI, fps)
@@ -118,21 +106,22 @@ class Videos:
         zero_pad_multiplier = 2
         windowed_fft = (ROI.T - np.mean(ROI, axis = -1)).T*hanning
         fft = np.fft.rfft(windowed_fft, axis = -1, n = fps*zero_pad_multiplier)
-        abs_fft = np.squeeze(np.mean(np.abs(fft), axis = 0))
+        fft_mag = np.squeeze(np.mean(np.abs(fft), axis = 0))
         freqs = np.fft.rfftfreq(n = fps*zero_pad_multiplier, d = 1/fps)
 
         #fit for frequency
-        rpm_idx = np.argmax(abs_fft)
-        y1 = abs_fft[rpm_idx - 1]
-        y2 = abs_fft[rpm_idx]
-        y3 = abs_fft[rpm_idx + 1]
+        rpm_idx = np.argmax(fft_mag)
+        y1 = fft_mag[rpm_idx - 1]
+        y2 = fft_mag[rpm_idx]
+        y3 = fft_mag[rpm_idx + 1]
         df = freqs[1] - freqs[0]
         b = (y3-y1)/(2*df)
         a = (y1 - 2*y2 + y3)/(2*df**2)
         true_freq = freqs[rpm_idx] - b/(2*a)
         rpm = 60*true_freq
 
+        return rpm, fft_mag, freqs
 
-        return rpm, abs_fft, freqs
+
 
 
